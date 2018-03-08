@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Weather Map</title>
+    <link rel="icon" href="/static/icon/head-logo.png" sizes="32x32">
+    <link rel="stylesheet" href="https://openlayers.org/en/v4.0.1/css/ol.css" type="text/css">
+    <script src="https://openlayers.org/en/v4.0.1/build/ol.js"></script>
+    <script src="https://cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script>
+    <link href="https://cdn.bootcss.com/bootstrap/4.0.0-alpha.6/css/bootstrap.min.css" rel="stylesheet">
+    <style type="text/css">
+        #map{
+            position: absolute;
+            height: 100%;
+            width: 100%;
+        }
+        .ol-popup {
+            position: absolute;
+            background-color: rgb(248, 255, 238);
+            -webkit-filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+            filter: drop-shadow(0 1px 4px rgba(0,0,0,0.2));
+            padding: 5px;
+            border-radius: 10px;
+            border: 1px solid #cccccc;
+
+            bottom: 12px;
+            left: -100px;
+            width: 230px;
+            opacity: 0.8;
+            font-family: "Microsoft YaHei";
+
+            -moz-transition: all 500ms ease;
+            -o-transition: all 500ms ease;
+            -webkit-transition: all 500ms ease-in-out;
+            transition: all 500ms ease-in-out;
+        }
+        .ol-popup:hover{
+            opacity: 1;
+        }
+        .ol-popup:after, .ol-popup:before {
+            top: 100%;
+            border: solid transparent;
+            content: " ";
+            height: 0;
+            width: 0;
+            position: absolute;
+            pointer-events: none;
+        }
+        .ol-popup:after {
+            border-top-color: white;
+            border-width: 5px;
+            left: 100px;
+            margin-left: -5px;
+        }
+        .ol-popup:before {
+            border-top-color: #cccccc;
+            border-width: 6px;
+            left: 100px;
+            margin-left: -6px;
+        }
+        #popup-content{
+            max-width:100px;
+            display: inline;
+            float: left;
+        }
+        #popup-content-rignt{
+            padding-left: 20px;
+            max-width: 100px;
+            display: inline;
+            float: left;
+        }
+        .ol-overlay-container{
+
+            -moz-transition: all 500ms ease;
+            -o-transition: all 500ms ease;
+            -webkit-transition: all 500ms ease-in-out;
+            transition: all 500ms ease-in-out;
+        }
+
+        #search_group{
+            position: absolute;
+            top:15px;
+            left: 70px;
+            z-index: 999;
+        }
+        .form-control{
+            width: 300px;
+            margin-right: 10px;
+        }
+
+    </style>
+</head>
+<body>
+<div id="map" class="map">
+    <div id="search_group" class="form-inline" defaultbutton="search_button">
+        <input type="text" class="form-control" id="search_input" placeholder="Beijing,Shanghai...">
+        <button type="button" class="btn btn-primary" id="search_button" name="search_button">Search</button>
+    </div>
+    <div id="popup" class="ol-popup">
+        <div id="popup-content"></div>
+        <div id="popup-content-rignt"></div>
+    </div>
+</div>
+<script>
+    var base_url = '';
+    var selected_sheng;
+    var selected_shi;
+    var empty_source =new ol.source.Vector({
+        forrmat:new ol.format.GeoJSON()
+    });
+    var is_evening = true;//判断是否为晚上
+    if(new Date().getHours()>6 && new Date().getHours()<18){is_evening = false;}
+    var icon_array_sun = [
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+0+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+1+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+2+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+3+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+4+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+99+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+99+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+7+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+8+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+9+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/sun/'+10+'.png'})
+    ];
+    var icon_array_moon = [
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+0+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+1+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+2+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+3+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+4+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+99+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+99+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+7+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+8+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+9+'.png'}),
+        new ol.style.Icon({src:base_url+'/static/icon/48/moon/'+10+'.png'})
+    ];
+    //获取feature对应的Icon
+    var get_Icon = function (feature) {
+        if(!is_evening){
+            var id = feature.get('state1');
+            if(id>10){id=5;}
+            return icon_array_sun[id];
+        }
+        else{
+            var id = feature.get('state2');
+            if(id>10){id=5;}
+            return icon_array_moon[id];
+        }
+    };
+
+
+    //天气图标样式
+    var default_weather_style = new  ol.style.Style({
+        geometry:function (feature) {
+            var coor = [feature.get('x'),feature.get('y')];
+            var cc = ol.proj.transform(coor, 'EPSG:4326', 'EPSG:3857');
+            return new ol.geom.Point(cc);
+        },
+        image: new ol.style.Icon({
+            src:base_url+'/static/icon/48/sun/'+99+'.png'
+        })
+    });
+    //省的样式
+    var default_sheng_style = new ol.style.Style({
+        stroke:new ol.style.Stroke({
+            color: 'rgb(131,175,155)',
+            width: 1
+        }),
+        fill:new ol.style.Fill({
+            color: 'rgb(255,255,255)'
+        }),
+        text:new ol.style.Text({
+            font:'12px 幼圆,黑体,sans-serif',
+            color:'#236586'
+        })
+    });
+    var sheng_style_func = function (feature,resolution) {
+        default_sheng_style.getText().setText(resolution < 10000 ? feature.get('NL_NAME_1') : '');
+        default_weather_style.setImage(get_Icon(feature));
+        return [default_sheng_style,default_weather_style];
+    };
+    //市的样式
+    var default_shi_style = new ol.style.Style({
+        stroke: new ol.style.Stroke({
+            color: 'rgb(131,175,155)',
+            width: 2
+        }),
+/*        fill: new ol.style.Fill({
+            color: '#9baa74'
+        }),*/
+        text:new ol.style.Text({
+            font:'12px 幼圆,黑体,sans-serif',
+            color:'#236586'
+        })
+    });
+    var shi_style_func =function (feature,resolution) {
+        if(resolution < 6000){
+            default_shi_style.getText().setText(resolution < 4000 ? feature.get('NL_NAME_2') : '');
+            default_weather_style.setImage(get_Icon(feature));
+            return [default_shi_style,default_weather_style];
+        }
+        else{
+            return [];
+        }
+
+    };
+    //县的样式
+    var default_xian_style = new ol.style.Style({
+        stroke: new ol.style.Stroke({
+            color: 'rgb(131,175,155)',
+            width: 3
+        }),
+/*        fill: new ol.style.Fill({
+            color: '#bbb386'
+        }),*/
+        text:new ol.style.Text({
+            font:'12px 幼圆,黑体,sans-serif',
+            color:'#236586'
+        })
+    });
+    var xian_style_func = function (feature,resolution) {
+        if(resolution < 2000){
+            default_xian_style.getText().setText(resolution < 900 ? feature.get('NL_NAME_3') : '');
+            default_weather_style.setImage(get_Icon(feature));
+            return [default_xian_style,default_weather_style]
+        }
+        else{
+            return [];
+        }
+    };
+    //选择要素的样式
+    var default_select_style = new  ol.style.Style({
+        stroke: new ol.style.Stroke({
+            color: '#5b1e00',
+            width: 5
+        })
+    });
+
+    //九段线图层
+    var nine_line = new ol.layer.Vector({
+        source:new ol.source.Vector({
+            url: base_url+'/static/nine_line.json',
+            format:new ol.format.GeoJSON()
+        })
+    });
+    //省图层
+    var sheng_layer = new ol.layer.Vector({
+        source:new ol.source.Vector({
+            url:base_url+'/geojson/1',
+            format: new ol.format.GeoJSON()
+        }),
+        style:sheng_style_func
+    });
+    //市图层
+    var shi_layer = new  ol.layer.Vector({
+        source:empty_source,
+        style:shi_style_func
+    });
+    //县图层
+    var xian_layer = new  ol.layer.Vector({
+        source:empty_source,
+        style:xian_style_func
+    });
+    //搜索图层
+    var search_layer = new  ol.layer.Vector({
+        source:new ol.source.Vector({
+            forrmat:new ol.format.GeoJSON()
+        }),
+        style:[default_select_style,default_weather_style]
+    });
+
+    var mapView = new ol.View({
+        center: ol.proj.transform([104, 30], 'EPSG:4326', 'EPSG:3857'),
+        zoom: 4.5,
+        minZoom:4.5,
+        maxZoom:12
+    });
+    var map = new ol.Map({
+        //下面的图层放在最上面
+        layers:[
+            nine_line,
+            sheng_layer,
+            shi_layer,
+            xian_layer,
+            search_layer
+        ],
+        target: 'map',
+        view: mapView,
+
+        controls:ol.control.defaults().extend([
+            new ol.control.OverviewMap()
+        ])
+    });
+    //展示市图层
+    var showShiLayer = function (sheng) {
+        shi_layer.setSource(
+            new ol.source.Vector({
+                url:base_url+'/geojson/1/'+sheng.get('ID_1'),
+                format:new  ol.format.GeoJSON()
+            })
+        );
+
+    };
+    //展示县图层
+    var showXianLayer = function (shi) {
+        xian_layer.setSource(
+            new ol.source.Vector({
+                url:base_url+'/geojson/1/'+shi.get('ID_1')+'/'+shi.get('ID_2'),
+                format:new ol.format.GeoJSON()
+            })
+        );
+    };
+
+
+    // 选择要素的交互
+    var selectClick;
+    selectClick = new ol.interaction.Select({
+        condition: ol.events.condition.singleclick,
+        layers:[sheng_layer,shi_layer],
+        style:default_select_style
+    });
+    selectClick.on('select',function(e){
+        selected_feature = e.selected[0];
+        if(selected_feature){
+            search_layer.getSource().clear();
+            var polygon = /** @type {ol.geom.SimpleGeometry} */ (selected_feature.getGeometry());
+            //选择的是县
+            if(selected_feature.get('ID_3')){
+
+            }
+            //选择的是市，需要展示县图层
+            else if(selected_feature.get('ID_2')){
+                //$('.text').text(selected_feature.get('NL_NAME_2'));
+                selected_shi = selected_feature;
+                showXianLayer(selected_shi);
+                mapView.fit(polygon,{ constrainResolution: false, duration: 1000});
+            }
+            //选择的是省，需要展示市图层
+            else if(selected_feature.get('ID_1')){
+                selected_sheng = selected_feature;
+                showShiLayer(selected_sheng);
+                mapView.fit(polygon,{ constrainResolution: false, duration: 1000});
+
+                selected_shi = undefined;   //移除选中的市图层
+                xian_layer.setSource(empty_source); //不再展示县
+            }
+        }
+        else{
+            //mapView.fit(map.getSize(),{ constrainResolution: false, duration: 1000});
+        }
+    });
+    map.addInteraction(selectClick);
+
+
+    //搜索的交互
+    var geojson = new  ol.format.GeoJSON({
+        featureProjection:'EPSG:3857'
+    });
+    var searchBtn = $("#search_button");
+    var inputField = $("#search_input");
+    searchBtn.on('click',function (event) {
+        if(inputField.val()){
+
+            $.ajax({
+                url: base_url+"/geojson/search",
+                data: {
+                    name:inputField.val()
+                },
+                success: function( result ) {
+                    var tmp_source =new ol.source.Vector({
+                        forrmat:new ol.format.GeoJSON()
+                    });
+                    var tmp_feature = geojson.readFeature(result);
+                    tmp_source.addFeature(tmp_feature);
+
+                    search_layer.setSource(tmp_source);
+                    mapView.fit(tmp_feature.getGeometry(),{ constrainResolution: false, duration: 1000});
+                }
+            });
+        }
+    });
+
+
+    //popup的交互
+    var container = document.getElementById('popup');
+    var content = document.getElementById('popup-content');
+    var content_right =document.getElementById('popup-content-rignt');
+    var overlay = new ol.Overlay(/** @type {olx.OverlayOptions} */ ({
+        element: container,
+        autoPan: false,
+        autoPanAnimation: {
+            duration: 250   //当Popup超出地图边界时，为了Popup全部可见，地图移动的速度. 单位为毫秒（ms）
+        }
+    }));
+    var hover_feature;
+    var has_set_over_lay = false;
+    map.on('pointermove', function(evt) {
+        var pixel = evt.pixel;
+        if(overlay)
+            map.forEachFeatureAtPixel(pixel,show_weather);
+        if(!has_set_over_lay){
+            map.removeOverlay(overlay);
+        }
+        has_set_over_lay = false;
+    });
+    var show_weather = function (feature,layer) {
+        if(hover_feature!=feature){
+            var coor = [feature.get('x'),feature.get('y')];
+            var coordinate = ol.proj.transform(coor, 'EPSG:4326', 'EPSG:3857');
+
+            var text_content = get_weather_content(feature);
+            content.innerHTML = text_content[0];
+            content_right.innerHTML = text_content[1];
+            overlay.setPosition(coordinate);
+            map.addOverlay(overlay);
+        }
+        hover_feature = feature;
+        has_set_over_lay = true;
+        return true;
+    };
+    var get_weather_content = function (feature) {
+        if(feature.get('ID_2')){
+            //市、县要素
+            var city_name = feature.get('cityname');
+            var weather = feature.get('stateDetailed');
+            var temp = feature.get('tem1')+'℃ - '+feature.get('tem2')+'℃';
+            var wind_state = feature.get('windState');
+
+            var tem_now = feature.get('temNow')+'℃';
+            var wind_dir = feature.get('windDir');
+            var wind_power = feature.get('windPower');
+            var humidity = feature.get('humidity');
+            var ref_time = feature.get('time');
+
+            return ['<p><strong>'+city_name+'</strong><br>'+weather+'<br>'+temp+'<br>'+wind_state+'</p>',
+                '<p><strong>当前实况</strong><br>'+tem_now+'<br>'+wind_dir+' '+wind_power+'<br>湿度:'+humidity+'<br>时间:'+ref_time+'</p>'
+            ];
+        }
+        else{
+            //省要素
+            var city_name = feature.get('cityname');
+            var weather = feature.get('stateDetailed');
+            var temp = feature.get('tem1')+'℃ - '+feature.get('tem2')+'℃';
+            var wind_state = feature.get('windState');
+
+            return ['<p><strong>'+city_name+'</strong><br>'+weather+'<br>'+temp+'<br>'+wind_state+'</p>',''];
+        }
+    }
+</script>
+</body>
+</html>
