@@ -14,7 +14,7 @@
     },
     {
       "type": "Feature",
-      "properties": {'name':'abc'},
+      "properties": {"name":"abc"},
       "geometry": {
         "type": "LineString",
         "coordinates": [
